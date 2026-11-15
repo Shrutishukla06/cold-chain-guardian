@@ -1,5 +1,5 @@
 import { TruckIcon, BatteryIcon, ThermometerIcon, ClockIcon } from './icons.jsx'
-import { formatRange, getShipmentMonitoringState } from '../utils/shipments.js'
+import { formatRange, getMonitoringRange, getShipmentMonitoringState } from '../utils/shipments.js'
 import { getDeviceConnectionState } from '../utils/deviceState.js'
 import './ShipmentPanel.css'
 
@@ -50,7 +50,7 @@ function ShipmentPanel({ shipment, device }) {
   const temperatureBand = !temperatureConfig
     ? '—'
     : temperatureConfig.available
-      ? formatRange(temperatureConfig.acceptable, 'temperature')
+      ? formatRange(getMonitoringRange(temperatureConfig), 'temperature')
       : 'Not fitted'
 
   const deviceConnectionState = device
@@ -161,7 +161,7 @@ function ShipmentPanel({ shipment, device }) {
             <ThermometerIcon size={15} />
           </span>
           <div>
-            <span className="shipment__stat-label">Temperature band</span>
+            <span className="shipment__stat-label">Temperature warning band</span>
             <span className="shipment__stat-value">{temperatureBand}</span>
           </div>
         </div>

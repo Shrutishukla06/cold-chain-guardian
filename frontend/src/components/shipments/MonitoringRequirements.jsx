@@ -2,20 +2,19 @@ import StatusBadge from '../StatusBadge.jsx'
 import { SENSOR_CATALOG, SENSOR_IDS } from '../../data/shipmentData.js'
 import { SENSOR_ICONS } from './sensorIcons.jsx'
 
-const isNumber = (value) => value !== '' && value != null && Number.isFinite(Number(value))
-
-function configStatus(available, enabled, configured) {
+function selectionStatus(available, enabled) {
   if (!available) return { label: 'Sensor unavailable', tone: 'muted' }
-  if (!enabled) return { label: 'Not monitored', tone: 'muted' }
-  if (!configured) return { label: 'Needs configuration', tone: 'warn' }
-  return { label: 'Configured', tone: 'ok' }
+  if (!enabled) return { label: 'Not selected', tone: 'muted' }
+  return { label: 'Selected for monitoring', tone: 'info' }
 }
 
 /**
  * Section C — for every sensor type show:
  *   1. whether the sensor is available on the selected device, and
- *   2. whether a monitoring range has been configured by the shipper.
- * These are deliberately separate states.
+ *   2. whether the operator selected that parameter for monitoring.
+ * These are deliberately separate states. Threshold values are configured in
+ * the Cargo Conditions & Alert Thresholds section so this section only holds
+ * availability and selection.
  */
 function MonitoringRequirements({ monitoring, device, onChange }) {
   return (
@@ -25,12 +24,8 @@ function MonitoringRequirements({ monitoring, device, onChange }) {
         const config = monitoring[sensorId]
         const Icon = SENSOR_ICONS[sensorId]
         const available = Boolean(device?.sensors?.includes(sensorId))
-        const isState = meta.kind === 'state'
-
-        const configured = isState
-          ? Boolean(config.acceptableState)
-          : isNumber(config.acceptable.min) && isNumber(config.acceptable.max)
-        const status = configStatus(available, config.enabled, configured)
+        const selected = available && config.enabled
+        const status = selectionStatus(available, selected)
 
         return (
           <article
@@ -66,81 +61,18 @@ function MonitoringRequirements({ monitoring, device, onChange }) {
             </div>
 
             <div className="monitoring-card__config">
-              <span className="monitoring-card__eyebrow">
-                Acceptable range (shipper-defined)
+              <span className="monitoring-card__eyebrow">Monitoring selection</span>
+              <span className="monitoring-card__hint">
+                {selected
+                  ? 'Warning and critical thresholds for this parameter are configured in Cargo Conditions & Alert Thresholds.'
+                  : 'Select this parameter to configure its cargo thresholds. A fitted sensor does not select it automatically.'}
               </span>
-
-              {isState ? (
-                <label className="monitoring-card__door">
-                  <span>Expected state</span>
-                  <select
-                    className="field__input field__input--compact"
-                    value={config.acceptableState}
-                    onChange={(event) =>
-                      onChange(sensorId, { acceptableState: event.target.value })
-                    }
-                  >
-                    <option value="closed">Closed</option>
-                    <option value="open">Open</option>
-                  </select>
-                </label>
-              ) : (
-                <div className="range-inputs">
-                  <label className="range-inputs__field">
-                    <span>Min</span>
-                    <input
-                      type="number"
-                      className="field__input field__input--compact"
-                      placeholder="—"
-                      step="any"
-                      value={config.acceptable.min}
-                      onChange={(event) =>
-                        onChange(sensorId, {
-                          acceptable: {
-                            ...config.acceptable,
-                            min: event.target.value,
-                          },
-                        })
-                      }
-                    />
-                  </label>
-                  <span className="range-inputs__dash" aria-hidden="true">
-                    to
-                  </span>
-                  <label className="range-inputs__field">
-                    <span>Max</span>
-                    <input
-                      type="number"
-                      className="field__input field__input--compact"
-                      placeholder="—"
-                      step="any"
-                      value={config.acceptable.max}
-                      onChange={(event) =>
-                        onChange(sensorId, {
-                          acceptable: {
-                            ...config.acceptable,
-                            max: event.target.value,
-                          },
-                        })
-                      }
-                    />
-                  </label>
-                  <span className="range-inputs__unit">{meta.unit}</span>
-                </div>
-              )}
-
-              {!configured && config.enabled && (
-                <span className="monitoring-card__warning">
-                  Enter the limits confirmed by your quality team. No default is
-                  assumed.
-                </span>
-              )}
             </div>
 
             <label className="monitor-toggle">
               <input
                 type="checkbox"
-                checked={config.enabled}
+                checked={selected}
                 disabled={!available}
                 onChange={(event) =>
                   onChange(sensorId, { enabled: event.target.checked })

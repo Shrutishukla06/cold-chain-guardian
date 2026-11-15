@@ -182,55 +182,11 @@ select.field__input--compact {
   color: var(--text-muted);
 }
 
-.range-inputs {
-  display: flex;
-  align-items: flex-end;
-  gap: 7px;
-  flex-wrap: wrap;
-}
-
-.range-inputs__field {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  font-size: 10px;
-  color: var(--text-muted);
-}
-
-.range-inputs__field .field__input {
-  width: 82px;
-}
-
-.range-inputs__dash {
-  padding-bottom: 8px;
-  font-size: 11px;
-  color: var(--text-muted);
-}
-
-.range-inputs__unit {
-  padding-bottom: 8px;
-  font-size: 11px;
-  color: var(--text-secondary);
-}
-
-.monitoring-card__door {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 11.5px;
-  color: var(--text-muted);
-}
-
-.monitoring-card__door .field__input {
-  width: 110px;
-}
-
-.monitoring-card__warning {
+.monitoring-card__hint {
   display: block;
-  margin-top: 4px;
-  font-size: 10.5px;
+  font-size: 11px;
   line-height: 1.45;
-  color: #fde68a;
+  color: var(--text-muted);
 }
 
 .monitor-toggle {
@@ -494,7 +450,7 @@ select.field__input--compact {
 }
 
 .threshold-field__control .field__input {
-  padding-right: 30px;
+  padding-right: 46px;
 }
 
 .threshold-field__suffix {
@@ -503,6 +459,21 @@ select.field__input--compact {
   font-size: 10px;
   color: var(--text-muted);
   pointer-events: none;
+}
+
+.threshold-field--full {
+  grid-column: 1 / -1;
+}
+
+.threshold-field select.field__input {
+  width: 100%;
+}
+
+.alert-policy__note {
+  margin: 0;
+  font-size: 10.5px;
+  line-height: 1.45;
+  color: var(--text-muted);
 }
 
 .system-alert-list {
@@ -652,15 +623,11 @@ select.field__input--compact {
 }
 
 @media (max-width: 480px) {
-  .range-inputs__field .field__input {
-    width: 100%;
-  }
-
-  .range-inputs__field {
-    flex: 1;
-  }
-
   .monitoring-card__head .status-badge {
     margin-left: 38px;
+  }
+
+  .threshold-field__control .field__input {
+    padding-right: 42px;
   }
 }

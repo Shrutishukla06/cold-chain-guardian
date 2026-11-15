@@ -34,19 +34,196 @@ function toBounds(minValue, maxValue) {
   }
 }
 
+const hasValue = (value) => value !== '' && value != null
+
+const NON_NEGATIVE_SENSORS = new Set(['humidity', 'shock', 'light', 'ethylene'])
+
+/**
+ * Validate the thresholds for every selected parameter. When a device is
+ * assigned, only sensors fitted on that device are validated. Without a device
+ * we still validate the operator's selections so threshold errors are not
+ * silently skipped. Low-side limits may stay blank; warning and critical limits
+ * must never overlap on the same side.
+ */
+function validateCargoThresholds(form, device) {
+  const errors = []
+  const enabledSensors = SENSOR_IDS.filter(
+    (sensorId) =>
+      form.monitoring[sensorId]?.enabled &&
+      (!device || device.sensors?.includes(sensorId)),
+  )
+
+  enabledSensors.forEach((sensorId) => {
+    const meta = SENSOR_CATALOG[sensorId]
+    const config = form.monitoring[sensorId]
+
+    if (meta.kind === 'state') {
+      if (config.expectedState !== 'open' && config.expectedState !== 'closed') {
+        errors.push(`Select the expected state for ${meta.label}.`)
+      }
+
+      const warningRaw = config.warningOpenMinutes
+      const criticalRaw = config.criticalOpenMinutes
+      const warning =
+        hasValue(warningRaw) && isNumber(warningRaw)
+          ? Number(warningRaw)
+          : null
+      const critical =
+        hasValue(criticalRaw) && isNumber(criticalRaw)
+          ? Number(criticalRaw)
+          : null
+
+      if (!hasValue(warningRaw)) {
+        errors.push(`Enter a warning duration for ${meta.label}.`)
+      } else if (warning == null || !Number.isInteger(warning) || warning <= 0) {
+        errors.push(
+          `${meta.label} warning duration must be a positive whole number of minutes.`,
+        )
+      }
+
+      if (!hasValue(criticalRaw)) {
+        errors.push(`Enter a critical duration for ${meta.label}.`)
+      } else if (critical == null || !Number.isInteger(critical) || critical <= 0) {
+        errors.push(
+          `${meta.label} critical duration must be a positive whole number of minutes.`,
+        )
+      }
+
+      if (warning != null && critical != null && critical <= warning) {
+        errors.push(
+          `${meta.label} critical duration must be longer than the warning duration.`,
+        )
+      }
+      return
+    }
+
+    const thresholdFields = [
+      ['Warning Low', config.warning.min],
+      ['Warning High', config.warning.max],
+      ['Critical Low', config.critical.min],
+      ['Critical High', config.critical.max],
+    ]
+
+    thresholdFields.forEach(([label, value]) => {
+      if (!hasValue(value)) return
+      if (!isNumber(value)) {
+        errors.push(`${label} for ${meta.label} must be a valid number.`)
+        return
+      }
+      if (NON_NEGATIVE_SENSORS.has(sensorId) && Number(value) < 0) {
+        errors.push(`${label} for ${meta.label} cannot be negative.`)
+      }
+      if (sensorId === 'humidity' && Number(value) > 100) {
+        errors.push(`${label} for ${meta.label} cannot exceed 100%.`)
+      }
+    })
+
+    if (!hasValue(config.warning.min) && !hasValue(config.warning.max)) {
+      errors.push(
+        `Enter at least one warning limit (Warning Low or Warning High) for ${meta.label}.`,
+      )
+    }
+
+    const warningLow =
+      hasValue(config.warning.min) && isNumber(config.warning.min)
+        ? Number(config.warning.min)
+        : null
+    const warningHigh =
+      hasValue(config.warning.max) && isNumber(config.warning.max)
+        ? Number(config.warning.max)
+        : null
+    const criticalLow =
+      hasValue(config.critical.min) && isNumber(config.critical.min)
+        ? Number(config.critical.min)
+        : null
+    const criticalHigh =
+      hasValue(config.critical.max) && isNumber(config.critical.max)
+        ? Number(config.critical.max)
+        : null
+
+    if (warningLow != null && warningHigh != null && warningLow >= warningHigh) {
+      errors.push(
+        `${meta.label} Warning Low must be below Warning High.`,
+      )
+    }
+    if (criticalLow != null && warningLow != null && criticalLow >= warningLow) {
+      errors.push(
+        `${meta.label} Critical Low must be below Warning Low.`,
+      )
+    }
+    if (
+      criticalHigh != null &&
+      warningHigh != null &&
+      criticalHigh <= warningHigh
+    ) {
+      errors.push(
+        `${meta.label} Critical High must be above Warning High.`,
+      )
+    }
+    if (criticalLow != null && criticalHigh != null && criticalLow >= criticalHigh) {
+      errors.push(
+        `${meta.label} Critical Low must be below Critical High.`,
+      )
+    }
+
+    if (hasValue(config.escalationMinutes)) {
+      if (
+        !isNumber(config.escalationMinutes) ||
+        Number(config.escalationMinutes) < 0
+      ) {
+        errors.push(
+          `${meta.label} escalation time must be a non-negative number of minutes.`,
+        )
+      }
+    }
+  })
+
+  return errors
+}
+
+function validateSystemAlerts(systemAlerts) {
+  const errors = []
+
+  if (systemAlerts.offline.enabled) {
+    const value = systemAlerts.offline.afterMinutes
+    if (!hasValue(value) || !isNumber(value) || Number(value) <= 0) {
+      errors.push(
+        'Enter an ESP32 offline delay greater than 0 minutes, or disable the offline alert.',
+      )
+    }
+  }
+
+  if (systemAlerts.battery.enabled) {
+    const value = systemAlerts.battery.thresholdPercent
+    if (
+      !hasValue(value) ||
+      !isNumber(value) ||
+      Number(value) < 1 ||
+      Number(value) > 100
+    ) {
+      errors.push(
+        'Enter a low-battery threshold between 1% and 100%, or disable the low-battery alert.',
+      )
+    }
+  }
+
+  return errors
+}
+
 function createMonitoringState() {
   return Object.fromEntries(
     SENSOR_IDS.map((sensorId) => [
       sensorId,
       {
-        enabled: sensorId === 'temperature' || sensorId === 'humidity',
-        acceptable: { min: '', max: '' },
-        acceptableState: 'closed',
+        // Nothing is monitored until the operator selects it. A fitted sensor
+        // must never select a parameter on the operator's behalf.
+        enabled: false,
+        expectedState: '',
         warning: { min: '', max: '' },
         critical: { min: '', max: '' },
         warningOpenMinutes: '',
         criticalOpenMinutes: '',
-        escalationMinutes: '10',
+        escalationMinutes: '',
       },
     ]),
   )
@@ -73,6 +250,7 @@ function createInitialForm(shipments) {
       offline: { enabled: true, afterMinutes: '10' },
       battery: { enabled: true, thresholdPercent: '20' },
       sensorFault: { enabled: true },
+      selfTest: { enabled: true },
     },
   }
 }
@@ -102,6 +280,22 @@ function buildMonitoring(form, device) {
       const available = Boolean(device?.sensors?.includes(sensorId))
       const enabled = available && config.enabled
 
+      // Disabled parameters keep availability information only. Stale warning
+      // or critical values must not be persisted as active configuration.
+      if (!enabled) {
+        return [
+          sensorId,
+          {
+            available,
+            enabled: false,
+            expectedState: null,
+            warning: null,
+            critical: null,
+            escalationMinutes: null,
+          },
+        ]
+      }
+
       if (SENSOR_CATALOG[sensorId].kind === 'state') {
         const warningOpen = toNumberOrNull(config.warningOpenMinutes)
         const criticalOpen = toNumberOrNull(config.criticalOpenMinutes)
@@ -110,7 +304,7 @@ function buildMonitoring(form, device) {
           {
             available,
             enabled,
-            acceptable: { state: config.acceptableState || 'closed' },
+            expectedState: config.expectedState || null,
             warning: warningOpen != null ? { maxOpenMinutes: warningOpen } : null,
             critical: criticalOpen != null ? { maxOpenMinutes: criticalOpen } : null,
             escalationMinutes: 0,
@@ -118,14 +312,11 @@ function buildMonitoring(form, device) {
         ]
       }
 
-      const min = toNumberOrNull(config.acceptable.min)
-      const max = toNumberOrNull(config.acceptable.max)
       return [
         sensorId,
         {
           available,
           enabled,
-          acceptable: min != null && max != null ? { min, max } : null,
           warning: toBounds(config.warning.min, config.warning.max),
           critical: toBounds(config.critical.min, config.critical.max),
           escalationMinutes: toNumberOrNull(config.escalationMinutes),
@@ -133,6 +324,21 @@ function buildMonitoring(form, device) {
       ]
     }),
   )
+}
+
+function buildSystemAlerts(systemAlerts) {
+  return {
+    offline: {
+      enabled: Boolean(systemAlerts.offline.enabled),
+      afterMinutes: toNumberOrNull(systemAlerts.offline.afterMinutes),
+    },
+    battery: {
+      enabled: Boolean(systemAlerts.battery.enabled),
+      thresholdPercent: toNumberOrNull(systemAlerts.battery.thresholdPercent),
+    },
+    sensorFault: { enabled: Boolean(systemAlerts.sensorFault.enabled) },
+    selfTest: { enabled: Boolean(systemAlerts.selfTest?.enabled) },
+  }
 }
 
 function buildShipment(form, status, device) {
@@ -161,7 +367,7 @@ function buildShipment(form, status, device) {
       progress: 0,
     },
     monitoring: buildMonitoring(form, device),
-    systemAlerts: form.systemAlerts,
+    systemAlerts: buildSystemAlerts(form.systemAlerts),
     deviceId: device?.id ?? null,
     createdAt: now,
     alerts: [],
@@ -243,6 +449,32 @@ function ShipmentForm({ shipments, devices, onCreate, onSaveDraft, onCancel }) {
     }))
   }
 
+  /**
+   * Changing the assigned device can change which sensors are fitted. Clear any
+   * selection that the new device cannot support so the checkbox, availability
+   * label and cargo threshold card always agree with each other.
+   */
+  const handleDeviceChange = (deviceId) => {
+    setForm((previous) => {
+      const nextDevice = deviceId
+        ? (devicesWithState.find((device) => device.id === deviceId) ?? null)
+        : null
+      const nextMonitoring = { ...previous.monitoring }
+
+      SENSOR_IDS.forEach((sensorId) => {
+        const available = Boolean(nextDevice?.sensors?.includes(sensorId))
+        if (!available && nextMonitoring[sensorId].enabled) {
+          nextMonitoring[sensorId] = {
+            ...nextMonitoring[sensorId],
+            enabled: false,
+          }
+        }
+      })
+
+      return { ...previous, deviceId, monitoring: nextMonitoring }
+    })
+  }
+
   const validateForCreate = () => {
     const validationErrors = validateIdentity(form, shipments)
 
@@ -263,48 +495,39 @@ function ShipmentForm({ shipments, devices, onCreate, onSaveDraft, onCancel }) {
       validationErrors.push('Delivery deadline cannot be earlier than expected arrival.')
     }
 
+    let assignedDevice = null
     if (!form.deviceId) {
       validationErrors.push(
         'Assign an available device to create the shipment, or save it as a draft.',
       )
     } else {
-      const device = devicesWithState.find((item) => item.id === form.deviceId)
-      if (!device) {
+      assignedDevice =
+        devicesWithState.find((item) => item.id === form.deviceId) ?? null
+      if (!assignedDevice) {
         validationErrors.push('Select a valid device.')
-      } else if (!device.available) {
+      } else if (!assignedDevice.available) {
         validationErrors.push(
-          `${device.id} is no longer available. Choose another device or save as a draft.`,
+          `${assignedDevice.id} is no longer available. Choose another device or save as a draft.`,
         )
       }
+    }
 
+    if (assignedDevice) {
       const enabledSensors = SENSOR_IDS.filter(
         (sensorId) =>
           form.monitoring[sensorId].enabled &&
-          device.sensors.includes(sensorId),
+          assignedDevice.sensors.includes(sensorId),
       )
       if (enabledSensors.length === 0) {
         validationErrors.push('Enable at least one monitoring parameter.')
       }
-
-      const unconfigured = enabledSensors.filter((sensorId) => {
-        const config = form.monitoring[sensorId]
-        if (SENSOR_CATALOG[sensorId].kind === 'state') {
-          return !config.acceptableState
-        }
-        if (!isNumber(config.acceptable.min) || !isNumber(config.acceptable.max)) {
-          return true
-        }
-        return Number(config.acceptable.min) >= Number(config.acceptable.max)
-      })
-
-      if (unconfigured.length > 0) {
-        validationErrors.push(
-          `Configure a valid acceptable range (min below max) for: ${unconfigured
-            .map((id) => SENSOR_CATALOG[id].label)
-            .join(', ')}. You can save as a draft if the limits are not confirmed yet.`,
-        )
-      }
     }
+
+    // Validate cargo configuration even without a device so threshold mistakes
+    // are surfaced instead of hidden behind the device-assignment error.
+    validationErrors.push(...validateCargoThresholds(form, assignedDevice))
+
+    validationErrors.push(...validateSystemAlerts(form.systemAlerts))
 
     return validationErrors
   }
@@ -523,7 +746,7 @@ function ShipmentForm({ shipments, devices, onCreate, onSaveDraft, onCancel }) {
         <FormSection
           step="C"
           title="Monitoring requirements"
-          description="Sensor availability and acceptable ranges are two different things. A fitted sensor does not define safe conditions by itself."
+          description="Select the parameters that matter for this shipment. Sensor availability only shows whether the assigned device has the sensor fitted — it does not select the parameter. Configure warning and critical cargo thresholds in Cargo Conditions & Alert Thresholds."
         >
           <MonitoringRequirements
             monitoring={form.monitoring}
@@ -540,19 +763,18 @@ function ShipmentForm({ shipments, devices, onCreate, onSaveDraft, onCancel }) {
           <DeviceAssignment
             devices={devicesWithState}
             selectedId={form.deviceId}
-            onSelect={(deviceId) =>
-              setForm((previous) => ({ ...previous, deviceId }))
-            }
+            onSelect={handleDeviceChange}
           />
         </FormSection>
 
         <FormSection
           step="E"
-          title="Alert configuration"
-          description="Set your own warning and critical limits, escalation timing and hardware health alerts."
+          title="Cargo Conditions & Alert Thresholds"
+          description="Warning and critical limits define when cargo conditions generate alerts. Only parameters selected for monitoring appear here. Hardware and connectivity alerts are configured separately from cargo thresholds."
         >
           <AlertConfiguration
             monitoring={form.monitoring}
+            device={selectedDevice}
             systemAlerts={form.systemAlerts}
             onChange={handleMonitoringChange}
             onSystemChange={handleSystemChange}

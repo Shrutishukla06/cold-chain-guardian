@@ -57,8 +57,8 @@ export function generateShipmentId(shipments) {
 
 /**
  * Devices are considered busy when an active shipment references them.
- * A sensor being present on a device is separate from whether monitoring
- * for that sensor has an acceptable range configured.
+ * A sensor being present on a device is separate from whether the operator
+ * selected it for monitoring and entered cargo thresholds.
  *
  * Availability also requires a fresh heartbeat. A device that claims to be
  * online but has gone quiet is stale and cannot be assigned until it reports.
@@ -94,13 +94,36 @@ export function findDeviceAssignment(shipments, deviceId, ignoreShipmentId = nul
   )
 }
 
-/** A sensor needs BOTH availability and a shipper-configured acceptable range. */
+/**
+ * The operator-configured warning range is the single numeric range for a
+ * parameter. `acceptable` is only read as a fallback for older demo records
+ * that predate warning/critical configuration; new shipments never persist it.
+ */
+export function getMonitoringRange(entry) {
+  if (!entry) return null
+  return entry.warning ?? entry.acceptable ?? null
+}
+
+/** Door status stores an expected state instead of a numeric range. */
+export function getExpectedDoorState(entry) {
+  if (!entry) return null
+  return entry.expectedState ?? entry.acceptable?.state ?? null
+}
+
+/**
+ * A selected sensor needs availability and operator-entered cargo limits.
+ * Numeric parameters may configure only one side (for example a high limit),
+ * so either a low or a high bound is sufficient. Door status uses the expected
+ * state instead of a numeric range.
+ */
 export function isMonitoringConfigured(entry) {
   if (!entry || !entry.available || !entry.enabled) return false
-  const acceptable = entry.acceptable
-  if (!acceptable) return false
-  if (acceptable.state != null) return Boolean(acceptable.state)
-  return Number.isFinite(acceptable.min) && Number.isFinite(acceptable.max)
+  const expectedState = getExpectedDoorState(entry)
+  if (expectedState != null) return Boolean(expectedState)
+
+  const range = getMonitoringRange(entry)
+  if (!range) return false
+  return Number.isFinite(range.min) || Number.isFinite(range.max)
 }
 
 export function getShipmentMonitoringState(shipment) {
@@ -155,7 +178,7 @@ export function getShipmentMonitoringState(shipment) {
     return {
       tone: 'warn',
       label: 'Needs configuration',
-      detail: 'At least one enabled sensor has no acceptable range configured.',
+      detail: 'At least one selected parameter has no warning limit configured.',
     }
   }
   if (enabledSensors.length === 0) {

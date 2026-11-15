@@ -438,7 +438,7 @@ function ShipmentDetail({
           </div>
 
           <p className="panel__footnote">
-            Values are generated mock telemetry around the configured acceptable
+            Values are generated mock telemetry around the configured warning
             range; they are not real sensor measurements yet.
           </p>
         </section>

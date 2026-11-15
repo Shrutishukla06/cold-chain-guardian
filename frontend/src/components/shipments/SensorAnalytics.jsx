@@ -6,6 +6,8 @@ import { getMockSensorSeries } from '../../data/sensorMock.js'
 import {
   formatRange,
   formatSensorValue,
+  getExpectedDoorState,
+  getMonitoringRange,
   isMonitoringConfigured,
 } from '../../utils/shipments.js'
 import { isHistoricalShipment } from '../../utils/history.js'
@@ -28,20 +30,27 @@ function getReadingState(meta, config, latest) {
   if (!latest) return { tone: 'muted', label: 'Awaiting readings' }
 
   if (meta.kind === 'state') {
-    return latest.value === 1
-      ? { tone: 'warn', label: 'Door open' }
-      : { tone: 'ok', label: 'Door closed' }
+    const isOpen = latest.value === 1
+    const expectedState = getExpectedDoorState(config)
+    // Without an expected state, the historical default is a closed door.
+    const abnormal = expectedState
+      ? expectedState === 'open'
+        ? !isOpen
+        : isOpen
+      : isOpen
+    const current = isOpen ? 'Door open' : 'Door closed'
+    return {
+      tone: abnormal ? 'warn' : 'ok',
+      label: abnormal ? `Unexpected: ${current.toLowerCase()}` : current,
+    }
   }
 
   const value = latest.value
   if (exceedsBounds(value, config.critical)) {
     return { tone: 'critical', label: 'Critical range' }
   }
-  if (exceedsBounds(value, config.warning)) {
+  if (exceedsBounds(value, getMonitoringRange(config))) {
     return { tone: 'warn', label: 'Warning range' }
-  }
-  if (exceedsBounds(value, config.acceptable)) {
-    return { tone: 'warn', label: 'Outside acceptable range' }
   }
   return { tone: 'ok', label: 'Within range' }
 }
@@ -70,6 +79,8 @@ function SensorAnalytics({ shipment }) {
   const series = config.available ? getMockSensorSeries(shipment, activeSensor) : []
   const latest = series.length > 0 ? series[series.length - 1] : null
   const state = getReadingState(meta, config, latest)
+  const warningRange = getMonitoringRange(config)
+  const expectedState = getExpectedDoorState(config)
 
   return (
     <section className="panel sensor-analytics">
@@ -172,17 +183,13 @@ function SensorAnalytics({ shipment }) {
         ) : (
           <>
             <div className="sensor-panel__chips">
-              <span
-                className={`limit-chip${
-                  isMonitoringConfigured(config) ? ' limit-chip--ok' : ' limit-chip--warn'
-                }`}
-              >
-                Acceptable: {formatRange(config.acceptable, activeSensor)}
-              </span>
+              {config.enabled && !isMonitoringConfigured(config) && (
+                <span className="limit-chip limit-chip--warn">Needs configuration</span>
+              )}
 
-              {meta.kind === 'numeric' && config.warning && (
+              {meta.kind === 'numeric' && warningRange && (
                 <span className="limit-chip limit-chip--warn">
-                  Warning: {formatRange(config.warning, activeSensor)}
+                  Warning: {formatRange(warningRange, activeSensor)}
                 </span>
               )}
               {meta.kind === 'numeric' && config.critical && (
@@ -191,14 +198,21 @@ function SensorAnalytics({ shipment }) {
                 </span>
               )}
 
+              {meta.kind === 'state' && expectedState && (
+                <span className="limit-chip limit-chip--ok">
+                  Expected state: {expectedState === 'open' ? 'Open' : 'Closed'}
+                </span>
+              )}
               {meta.kind === 'state' && config.warning?.maxOpenMinutes != null && (
                 <span className="limit-chip limit-chip--warn">
-                  Warning: open &gt; {config.warning.maxOpenMinutes} min
+                  Warning: unexpected state for more than{' '}
+                  {config.warning.maxOpenMinutes} min
                 </span>
               )}
               {meta.kind === 'state' && config.critical?.maxOpenMinutes != null && (
                 <span className="limit-chip limit-chip--critical">
-                  Critical: open &gt; {config.critical.maxOpenMinutes} min
+                  Critical: unexpected state for more than{' '}
+                  {config.critical.maxOpenMinutes} min
                 </span>
               )}
 

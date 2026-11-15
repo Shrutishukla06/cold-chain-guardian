@@ -3,8 +3,8 @@ import { SENSOR_CATALOG } from './shipmentData.js'
 /**
  * Deterministic mock telemetry for a shipment/sensor pair.
  *
- * The values are generated around the shipper-configured acceptable range
- * when one exists; they are demonstration readings, not real measurements.
+ * The values are generated around the operator-configured warning range when
+ * one exists; they are demonstration readings, not real measurements.
  * This module is the single place to replace with real ESP32 data later.
  */
 
@@ -94,13 +94,11 @@ export function getMockSensorSeries(
   }
 
   const config = shipment.monitoring?.[sensorId]
-  const acceptable = config?.acceptable
+  const range = config?.warning ?? config?.acceptable
   const hasRange =
-    acceptable &&
-    Number.isFinite(acceptable.min) &&
-    Number.isFinite(acceptable.max)
+    range && Number.isFinite(range.min) && Number.isFinite(range.max)
 
-  const base = hasRange ? (acceptable.min + acceptable.max) / 2 : DEMO_BASE[sensorId]
+  const base = hasRange ? (range.min + range.max) / 2 : DEMO_BASE[sensorId]
   const spread = DEMO_SPREAD[sensorId] ?? 0.5
   const floor = NON_NEGATIVE.has(sensorId) ? 0 : base - spread * 3
   const ceiling = base + spread * 3

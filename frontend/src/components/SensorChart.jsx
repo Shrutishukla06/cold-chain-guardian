@@ -37,8 +37,8 @@ function niceScale(min, max, maxTicks = 6) {
 
 /**
  * Generic sensor line/state chart. Supports all six sensor types through the
- * sensor metadata (numeric vs. door state) and draws the shipper-configured
- * acceptable band and warning/critical thresholds when present.
+ * sensor metadata (numeric vs. door state) and draws the operator-configured
+ * warning band, warning lines and critical thresholds when present.
  */
 function SensorChart({ series, meta, config, historical = false }) {
   if (!series || series.length === 0) {
@@ -59,8 +59,8 @@ function SensorChart({ series, meta, config, historical = false }) {
     domainMax = 1.1
   } else {
     const candidates = [...values]
-    ;['acceptable', 'warning', 'critical'].forEach((key) => {
-      const bounds = config?.[key]
+    const ranges = [config?.warning ?? config?.acceptable, config?.critical]
+    ranges.forEach((bounds) => {
       if (!bounds) return
       if (Number.isFinite(bounds.min)) candidates.push(bounds.min)
       if (Number.isFinite(bounds.max)) candidates.push(bounds.max)
@@ -110,12 +110,12 @@ function SensorChart({ series, meta, config, historical = false }) {
     ? null
     : `${linePath} L${points[points.length - 1].x.toFixed(1)},${PAD.top + plotH} L${points[0].x.toFixed(1)},${PAD.top + plotH} Z`
 
-  const acceptable = config?.acceptable
+  const warningBand = config?.warning ?? config?.acceptable
   const numericBand =
     !isState &&
-    acceptable &&
-    Number.isFinite(acceptable.min) &&
-    Number.isFinite(acceptable.max)
+    warningBand &&
+    Number.isFinite(warningBand.min) &&
+    Number.isFinite(warningBand.max)
 
   const gridValues = isState
     ? [0, 1]
@@ -128,11 +128,19 @@ function SensorChart({ series, meta, config, historical = false }) {
     Math.round((i * (series.length - 1)) / 3),
   )
 
+  const expectedState = config?.expectedState ?? config?.acceptable?.state
+
   const isExcursion = (value) => {
-    if (isState || !acceptable) return false
-    if (Number.isFinite(acceptable.min) && value < acceptable.min) return true
-    if (Number.isFinite(acceptable.max) && value > acceptable.max) return true
+    if (!warningBand) return false
+    if (Number.isFinite(warningBand.min) && value < warningBand.min) return true
+    if (Number.isFinite(warningBand.max) && value > warningBand.max) return true
     return false
+  }
+
+  const isStateExcursion = (value) => {
+    const open = value === 1
+    if (!expectedState) return open
+    return expectedState === 'open' ? !open : open
   }
 
   const formatTimestamp = (timestamp) =>
@@ -178,9 +186,9 @@ function SensorChart({ series, meta, config, historical = false }) {
         {numericBand && (
           <rect
             x={PAD.left}
-            y={y(acceptable.max)}
+            y={y(warningBand.max)}
             width={plotW}
-            height={Math.max(0, y(acceptable.min) - y(acceptable.max))}
+            height={Math.max(0, y(warningBand.min) - y(warningBand.max))}
             fill="rgba(52, 211, 153, 0.08)"
           />
         )}
@@ -270,8 +278,9 @@ function SensorChart({ series, meta, config, historical = false }) {
         />
 
         {points.map((point) => {
-          const stateOpen = isState && point.value === 1
-          const excursion = stateOpen || isExcursion(point.value)
+          const excursion = isState
+            ? isStateExcursion(point.value)
+            : isExcursion(point.value)
           if (!excursion && point.index % 6 !== 0) return null
           return (
             <circle

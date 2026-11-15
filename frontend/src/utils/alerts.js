@@ -7,7 +7,7 @@
  */
 
 import { SENSOR_CATALOG, SENSOR_IDS } from '../data/shipmentData.js'
-import { formatDateTime, formatRange } from './shipments.js'
+import { formatDateTime, formatRange, getExpectedDoorState, getMonitoringRange } from './shipments.js'
 
 export const SEVERITY_RANK = { critical: 0, warning: 1, info: 2 }
 
@@ -27,6 +27,7 @@ export const SYSTEM_TYPE_LABELS = {
   battery: 'Battery',
   offline: 'Connectivity',
   sensorFault: 'Sensor fault',
+  selfTest: 'Sensor self-test',
 }
 
 export const ALERT_HISTORY_NOTE =
@@ -80,7 +81,9 @@ export function getAlertParameterMeta(alert) {
 
 function formatThreshold(range, parameter) {
   if (!range) return 'Not configured'
-  if (range.maxOpenMinutes != null) return `Open > ${range.maxOpenMinutes} min`
+  if (range.maxOpenMinutes != null) {
+    return `Unexpected state for more than ${range.maxOpenMinutes} min`
+  }
   return formatRange(range, parameter)
 }
 
@@ -138,6 +141,20 @@ export function getConfiguredThreshold(shipment, alert) {
       }
     }
 
+    if (alert.systemType === 'selfTest') {
+      const config = system.selfTest
+      return {
+        configured: Boolean(config?.enabled),
+        rows: [
+          {
+            label: 'Self-test monitoring',
+            value: config?.enabled ? 'Enabled' : 'Not configured',
+          },
+        ],
+        escalation: null,
+      }
+    }
+
     return {
       configured: false,
       rows: [{ label: 'System threshold', value: 'Not configured' }],
@@ -154,13 +171,29 @@ export function getConfiguredThreshold(shipment, alert) {
     }
   }
 
+  const expectedState = getExpectedDoorState(config)
+  const warning = getMonitoringRange(config)
+  const rows = []
+
+  if (expectedState) {
+    rows.push({
+      label: 'Expected state',
+      value: expectedState === 'open' ? 'Open' : 'Closed',
+    })
+  }
+
+  rows.push({
+    label: 'Warning',
+    value: formatThreshold(warning, alert.parameter),
+  })
+  rows.push({
+    label: 'Critical',
+    value: formatThreshold(config.critical, alert.parameter),
+  })
+
   return {
-    configured: Boolean(config.acceptable),
-    rows: [
-      { label: 'Acceptable', value: formatThreshold(config.acceptable, alert.parameter) },
-      { label: 'Warning', value: formatThreshold(config.warning, alert.parameter) },
-      { label: 'Critical', value: formatThreshold(config.critical, alert.parameter) },
-    ],
+    configured: Boolean(warning || config.critical || expectedState),
+    rows,
     escalation:
       Number(config.escalationMinutes) > 0
         ? `Escalates after ${config.escalationMinutes} min`
