@@ -28,7 +28,10 @@ const {
 const {
   resolveDevice,
   assertDeviceAvailable,
+  isOperationalDeviceConflict,
+  operationalDeviceConflict,
 } = require('./deviceAvailability')
+const { calculateExposure } = require('./exposureService')
 
 const STATUS_FILTERS = [
   'all',
@@ -140,7 +143,15 @@ async function saveNewShipment(payload, shipmentId, device) {
     timeline: buildInitialTimeline(payload.status, device),
   })
 
-  await shipment.save()
+  try {
+    await shipment.save()
+  } catch (error) {
+    if (isOperationalDeviceConflict(error)) {
+      throw operationalDeviceConflict(device)
+    }
+    throw error
+  }
+
   return shipment
 }
 
@@ -380,12 +391,13 @@ async function findShipmentDocument(identifier) {
 async function getShipmentDetail(identifier) {
   const shipment = await findShipmentDocument(identifier)
 
-  const [device, alerts, latestReading] = await Promise.all([
+  const [device, alerts, latestReading, exposure] = await Promise.all([
     shipment.device ? Device.findById(shipment.device) : null,
     Alert.find({ shipment: shipment._id }).sort({ startedAt: -1 }).lean(),
     SensorReading.findOne({ shipment: shipment._id })
       .sort({ recordedAt: -1 })
       .lean(),
+    calculateExposure(shipment),
   ])
 
   return presentShipment(shipment, {
@@ -394,7 +406,7 @@ async function getShipmentDetail(identifier) {
     alerts,
     latestReading,
     alertSummary: summarizeAlerts(alerts),
-    exposure: null,
+    exposure,
   })
 }
 
@@ -403,6 +415,7 @@ module.exports = {
   listShipments,
   getShipmentDetail,
   findShipmentDocument,
+  buildShipmentFilter,
   buildInitialTimeline,
   nextShipmentId,
 }

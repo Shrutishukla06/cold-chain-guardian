@@ -52,6 +52,22 @@ const alertSchema = new Schema(
       },
     },
 
+    /*
+     * Internal episode identity for one unresolved breach. A partial unique
+     * index makes concurrent ingestion unable to create duplicate episodes.
+     * Resolution unsets this value so a later breach can start a new episode.
+     */
+    episodeKey: {
+      type: String,
+      trim: true,
+      default: undefined,
+      set(value) {
+        if (value === null || value === undefined) return undefined
+        const text = String(value).trim()
+        return text === '' ? undefined : text
+      },
+    },
+
     shipment: {
       type: Schema.Types.ObjectId,
       ref: 'Shipment',
@@ -197,6 +213,17 @@ alertSchema.index(
     unique: true,
     name: 'alertCode_unique_string',
     partialFilterExpression: { alertCode: { $type: 'string' } },
+  },
+)
+
+// Only unresolved episodes carry an episodeKey, so one condition can never
+// produce two open alerts while resolved history is free to reuse the key.
+alertSchema.index(
+  { episodeKey: 1 },
+  {
+    unique: true,
+    name: 'alert_episode_unique',
+    partialFilterExpression: { episodeKey: { $type: 'string' } },
   },
 )
 

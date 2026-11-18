@@ -2,6 +2,10 @@ require('dotenv').config({ quiet: true })
 
 const app = require('./app')
 const { connectDatabase, disconnectDatabase } = require('./config/db')
+const {
+  startOfflineSweep,
+  stopOfflineSweep,
+} = require('./services/offlineSweep')
 
 const PORT = Number(process.env.PORT) || 5000
 const MONGODB_URI = process.env.MONGODB_URI
@@ -12,11 +16,14 @@ const server = app.listen(PORT, () => {
   console.log(`[server] Cold-Chain Guardian API listening on http://localhost:${PORT}`)
 })
 
-connectDatabase(MONGODB_URI)
+connectDatabase(MONGODB_URI).then((connected) => {
+  if (connected) startOfflineSweep()
+})
 
-// Close the HTTP server and database cleanly when the process is stopped.
+// Close the HTTP server, stop the sweep and release MongoDB when stopped.
 async function shutdown(signal) {
   console.log(`[server] Received ${signal}. Shutting down...`)
+  await stopOfflineSweep()
   server.close(async () => {
     await disconnectDatabase()
     process.exit(0)

@@ -469,5 +469,26 @@ shipmentSchema.index({ healthStatus: 1, createdAt: -1 })
 shipmentSchema.index({ device: 1, status: 1 })
 shipmentSchema.index({ 'cargo.category': 1 })
 
+/*
+ * At most one operational shipment (scheduled or in-transit) may reserve a
+ * device. Drafts, delivered and archived history are excluded so the same
+ * hardware can be reused after delivery while history keeps its reference.
+ *
+ * The service layer still performs a friendly pre-check, but this index is the
+ * authoritative concurrency guard: two simultaneous assignments race on the
+ * same key and the loser receives a 409 DEVICE_BUSY conflict.
+ */
+shipmentSchema.index(
+  { device: 1 },
+  {
+    unique: true,
+    name: 'operational_device_unique',
+    partialFilterExpression: {
+      status: { $in: ['scheduled', 'in-transit'] },
+      device: { $type: 'objectId' },
+    },
+  },
+)
+
 module.exports =
   mongoose.models.Shipment || mongoose.model('Shipment', shipmentSchema)

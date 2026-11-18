@@ -3,6 +3,24 @@ const { Device, Shipment } = require('../models')
 const { OPERATIONAL_SHIPMENT_STATUSES } = require('../constants/enums')
 const { getDeviceConnectionState } = require('../utils/deviceState')
 
+/** Resolve a business device ID (or ObjectId) to its document. */
+async function findDeviceDocument(identifier) {
+  const trimmed = String(identifier ?? '').trim()
+  if (trimmed.length === 0) {
+    throw ApiError.notFound('Device was not found.')
+  }
+
+  const filter = /^[0-9a-fA-F]{24}$/.test(trimmed)
+    ? { $or: [{ deviceId: trimmed }, { _id: trimmed }] }
+    : { deviceId: trimmed }
+
+  const device = await Device.findOne(filter)
+  if (!device) {
+    throw ApiError.notFound(`Device "${identifier}" was not found.`)
+  }
+  return device
+}
+
 /** Resolve a business device ID to its document, or return null for no device. */
 async function resolveDevice(deviceId) {
   if (deviceId === undefined || deviceId === null) return null
@@ -27,9 +45,9 @@ async function resolveDevice(deviceId) {
 }
 
 /**
- * A device may back at most one operational shipment. The database-level
- * unique index is added with the assignment endpoints later; this check keeps
- * create/update/schedule honest in the meantime.
+ * A device may back at most one operational shipment. This friendly pre-check
+ * is backed by the `operational_device_unique` partial index, which remains
+ * authoritative under concurrent requests.
  */
 async function assertDeviceAvailable(device, options = {}) {
   const filter = {
@@ -76,7 +94,38 @@ async function assertDeviceAvailable(device, options = {}) {
   return connectionState
 }
 
+/**
+ * True when MongoDB rejected a write because another operational shipment
+ * already reserves the device (the `operational_device_unique` partial index).
+ */
+function isOperationalDeviceConflict(error) {
+  if (!error || error.code !== 11000) return false
+  return Boolean(
+    error.keyPattern?.device ||
+      error.keyValue?.device ||
+      /operational_device_unique/.test(String(error.message ?? '')),
+  )
+}
+
+/** Convert a raw duplicate-key error into the approved 409 conflict shape. */
+function operationalDeviceConflict(device) {
+  const label = device?.deviceId ? `Device ${device.deviceId}` : 'That device'
+  return ApiError.conflict(
+    'DEVICE_BUSY',
+    `${label} is already assigned to an operational shipment.`,
+    [
+      {
+        field: 'deviceId',
+        message: 'A device can back at most one scheduled or in-transit shipment.',
+      },
+    ],
+  )
+}
+
 module.exports = {
+  findDeviceDocument,
   resolveDevice,
   assertDeviceAvailable,
+  isOperationalDeviceConflict,
+  operationalDeviceConflict,
 }

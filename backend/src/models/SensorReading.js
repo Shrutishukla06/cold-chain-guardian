@@ -83,12 +83,41 @@ const sensorReadingSchema = new Schema(
 
     // true means the cargo door is open.
     doorOpen: { type: Boolean },
+
+    /*
+     * Ingestion flags. These are derived by the reading service, never
+     * supplied by a device:
+     *
+     *   late             - accepted through the historical late-reading path
+     *                      for a completed or archived shipment.
+     *   lateReason       - why the historical path was used.
+     *   outOfOrder       - recordedAt predates a reading already stored for
+     *                      the same shipment.
+     *   stale            - received long after the device timestamp.
+     *   evaluationSkipped - cargo threshold evaluation must not run.
+     *   skipReason       - machine-readable reason for the skip.
+     */
+    late: { type: Boolean, default: false },
+    lateReason: {
+      type: String,
+      enum: ['completed-shipment', null],
+      default: null,
+    },
+    outOfOrder: { type: Boolean, default: false },
+    stale: { type: Boolean, default: false },
+    evaluationSkipped: { type: Boolean, default: false },
+    skipReason: {
+      type: String,
+      enum: ['late-completed-shipment', 'out-of-order', 'stale', 'pre-departure', null],
+      default: null,
+    },
   },
   { timestamps: { createdAt: true, updatedAt: false } },
 )
 
 sensorReadingSchema.index({ shipment: 1, recordedAt: -1 })
 sensorReadingSchema.index({ device: 1, recordedAt: -1 })
+sensorReadingSchema.index({ shipment: 1, evaluationSkipped: 1, recordedAt: -1 })
 
 module.exports =
   mongoose.models.SensorReading ||

@@ -112,15 +112,31 @@ function formatReading(alert) {
   return formatNumeric(value, alert.parameter) ?? String(value)
 }
 
-function presentAlert(alert) {
+function presentAlert(alert, options = {}) {
   const plain = toPlain(alert) ?? {}
   const objectId = plain._id ? String(plain._id) : null
   const alertCode = plain.alertCode ?? null
+  const shipment = options.shipment ? toPlain(options.shipment) : null
+  const device = options.device ? toPlain(options.device) : null
 
   return {
     id: alertCode ?? objectId,
     objectId,
     alertCode,
+    shipmentId: shipment?.shipmentId ?? options.shipmentId ?? null,
+    shipmentObjectId:
+      shipment?._id
+        ? String(shipment._id)
+        : plain.shipment
+          ? String(plain.shipment)
+          : null,
+    deviceId: device?.deviceId ?? options.deviceId ?? null,
+    deviceObjectId:
+      device?._id
+        ? String(device._id)
+        : plain.device
+          ? String(plain.device)
+          : null,
     source: plain.source ?? null,
     systemType: plain.systemType ?? null,
     parameter: plain.parameter ?? null,
@@ -141,8 +157,11 @@ function presentAlert(alert) {
     recoveredAt: toIso(plain.recoveredAt),
     resolvedAt: toIso(plain.resolvedAt),
     status: plain.status ?? null,
+    recovered: Boolean(plain.recoveredAt),
     resolutionNote: plain.resolutionNote ?? '',
     resolvedBy: plain.resolvedBy ?? '',
+    createdAt: toIso(plain.createdAt),
+    updatedAt: toIso(plain.updatedAt),
     display: {
       reading: formatReading(plain),
       threshold: formatThreshold(plain),
@@ -242,16 +261,20 @@ function presentShipment(shipment, options = {}) {
     createdAt: toIso(plain.createdAt),
     updatedAt: toIso(plain.updatedAt),
     isDemo: Boolean(plain.isDemo),
+    // There is no incident model in this phase; the key is kept for frontend
+    // compatibility on both list and detail responses.
+    incidents: [],
   }
 
   if (detail) {
     result.monitoring = toPlain(plain.monitoring) ?? {}
     result.systemAlerts = toPlain(plain.systemAlerts) ?? {}
     result.timeline = presentTimeline(plain.timeline, plain.shipmentId)
-    result.alerts = (options.alerts ?? []).map(presentAlert)
+    result.alerts = (options.alerts ?? []).map((alert) =>
+      presentAlert(alert, { shipment: plain, device }),
+    )
     result.latestReading = presentLatestReading(options.latestReading)
     result.exposure = options.exposure ?? null
-    result.incidents = []
   }
 
   return result

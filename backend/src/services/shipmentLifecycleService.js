@@ -26,6 +26,8 @@ const {
 const {
   resolveDevice,
   assertDeviceAvailable,
+  isOperationalDeviceConflict,
+  operationalDeviceConflict,
 } = require('./deviceAvailability')
 
 const SYSTEM_ALERT_KEYS = ['offline', 'battery', 'sensorFault', 'selfTest']
@@ -38,6 +40,21 @@ function appendTimeline(shipment, { title, description, tone, occurredAt }) {
     tone,
     occurredAt: occurredAt ?? new Date(),
   })
+}
+
+/**
+ * Save a shipment while mapping a concurrent device reservation to the same
+ * 409 DEVICE_BUSY response as the service-level pre-check.
+ */
+async function saveShipment(shipment, device) {
+  try {
+    await shipment.save()
+  } catch (error) {
+    if (isOperationalDeviceConflict(error)) {
+      throw operationalDeviceConflict(device)
+    }
+    throw error
+  }
 }
 
 function plain(value) {
@@ -179,7 +196,7 @@ async function updateShipment(identifier, input) {
   validateShipmentConfiguration(shipment)
   validateMonitoringAvailability(shipment, device)
 
-  await shipment.save()
+  await saveShipment(shipment, device)
   return shipment
 }
 
@@ -302,7 +319,7 @@ async function scheduleShipment(identifier, input = {}) {
     tone: 'info',
   })
 
-  await shipment.save()
+  await saveShipment(shipment, device)
   return shipment
 }
 

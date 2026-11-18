@@ -12,6 +12,11 @@ const {
   completeShipment,
   archiveShipment,
 } = require('../services/shipmentLifecycleService')
+const {
+  assignShipmentDevice,
+  releaseShipmentDevice,
+  getShipmentDevice,
+} = require('../services/deviceAssignmentService')
 
 async function create(req, res) {
   const shipment = await createShipment(req.body)
@@ -68,6 +73,26 @@ async function archive(req, res) {
   return sendData(res, detail)
 }
 
+async function assignDevice(req, res) {
+  const { shipment } = await assignShipmentDevice(
+    req.params.shipmentId,
+    req.body ?? {},
+  )
+  const detail = await getShipmentDetail(shipment.shipmentId)
+  return sendData(res, detail)
+}
+
+async function releaseDevice(req, res) {
+  const { shipment } = await releaseShipmentDevice(req.params.shipmentId)
+  const detail = await getShipmentDetail(shipment.shipmentId)
+  return sendData(res, detail)
+}
+
+async function getDeviceAssignment(req, res) {
+  const assignment = await getShipmentDevice(req.params.shipmentId)
+  return sendData(res, assignment)
+}
+
 module.exports = {
   create,
   list,
@@ -78,4 +103,7 @@ module.exports = {
   depart,
   complete,
   archive,
+  assignDevice,
+  releaseDevice,
+  getDeviceAssignment,
 }

@@ -4,8 +4,10 @@
  * fresh heartbeat; missing or stale evidence is never treated as online.
  */
 
-const DEVICE_STALE_AFTER_MINUTES = 10
-const MINUTE_MS = 60 * 1000
+const {
+  DEVICE_STALE_AFTER_MINUTES,
+  MINUTE_MS,
+} = require('../constants/deviceHealth')
 
 function toTimestamp(value) {
   if (value === null || value === undefined) return null

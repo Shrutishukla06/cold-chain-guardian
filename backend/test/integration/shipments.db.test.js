@@ -133,6 +133,12 @@ if (SKIP_REASON) {
   before(async () => {
     await mongoose.connect(TEST_URI, { serverSelectionTimeoutMS: 15000 })
     await mongoose.connection.dropDatabase()
+    await Promise.all([
+      Shipment.ensureIndexes(),
+      Device.ensureIndexes(),
+      Alert.ensureIndexes(),
+      SensorReading.ensureIndexes(),
+    ])
 
     await Device.create({
       deviceId: DEVICE_ID,
@@ -172,7 +178,8 @@ if (SKIP_REASON) {
       resolved: 0,
     })
     assert.equal(detail.latestReading, null)
-    assert.equal(detail.exposure, null)
+    assert.equal(detail.exposure.available, false)
+    assert.equal(detail.exposure.temperatureMinutesOutOfRange, null)
     assert.deepEqual(detail.incidents, [])
 
     const list = await listShipments({ status: 'draft', limit: '10' })
